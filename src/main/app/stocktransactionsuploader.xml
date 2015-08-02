@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:context="http://www.springframework.org/schema/context" xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.6.2"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd
+http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd">
+    <db:mysql-config name="TradingIntelligenceMySQL_Configuration" host="${mysql.host}" port="${mysql.port}" user="${mysql.username}" password="${mysql.password}" database="${mysql.database}" doc:name="MySQL Configuration"/>
+    <file:connector name="File" writeToDirectory="src/main/resources/output" readFromDirectory="src/main/resources/input" autoDelete="true" streaming="true" validateConnections="true" doc:name="File"/>
+    <context:property-placeholder location="properties/${mule.env}.properties"/>
+    <flow name="stocktransactionsuploaderFlow">
+        <file:inbound-endpoint path="src/main/resources/input" moveToDirectory="src/main/resources/output" responseTimeout="10000" doc:name="Read COL transactions email" connector-ref="File"/>
+        <enricher target="flowVars.temp" doc:name="Message Enricher">
+            <processor-chain doc:name="Processor Chain">
+                <expression-component doc:name="Convert email to DOM"><![CDATA[payload = com.avanaur.tradingintelligence.helper.EmailHelper.getMimeMessage(payload);
+payload = com.avanaur.tradingintelligence.helper.HtmlHelper.toDom(payload.getContent());]]></expression-component>
+                <custom-transformer class="com.avanaur.tradingintelligence.transformer.ColMailToTransactionData" doc:name="Create trade transactions from DOM"/>
+                <foreach doc:name="For Each">
+                    <logger message="#[payload.stockSymbol + &quot; &quot; + payload.action.toString() + &quot; &quot; + payload.quantity + &quot; &quot; + com.avanaur.tradingintelligence.helper.DateHelper.format(payload.transactionDate, 'yyyy-MM-dd')]" level="INFO" doc:name="Log transaction"/>
+                    <db:insert config-ref="TradingIntelligenceMySQL_Configuration" doc:name="Upload to MySQL">
+                        <db:parameterized-query><![CDATA[INSERT INTO `stock_transaction` (`transaction_order`, `stock_symbol`, `transaction_type`, `transaction_date`, `quantity`, `price`, `gross_amount`, `net_charges`, `net_amount`, `sales_tax`)
+VALUES
+	(#[payload.transactionOrder], #[payload.stockSymbol], #[payload.action.toString()], #[com.avanaur.tradingintelligence.helper.DateHelper.format(payload.transactionDate, 'yyyy-MM-dd')], #[payload.quantity], #[payload.price], #[payload.grossAmount], #[payload.charges], #[payload.netAmount], #[payload.saleTax]);]]></db:parameterized-query>
+                    </db:insert>
+                </foreach>
+            </processor-chain>
+        </enricher>
+        <expression-component doc:name="Ensure file stream is closed"><![CDATA[payload.close()]]></expression-component>
+        <logger message="Done processing file #[flowVars.originalFilename]" level="INFO" doc:name="Log that file processing is completed"/>
+    </flow>
+</mule>
