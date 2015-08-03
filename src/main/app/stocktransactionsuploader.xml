@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<mule xmlns:context="http://www.springframework.org/schema/context" xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:context="http://www.springframework.org/schema/context" xmlns:mulexml="http://www.mulesoft.org/schema/mule/xml" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
 	xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.6.2"
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
@@ -8,12 +8,15 @@ http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/cor
 http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd
 http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
 http://www.mulesoft.org/schema/mule/xml http://www.mulesoft.org/schema/mule/xml/current/mule-xml.xsd
-http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd">
+http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
     <db:mysql-config name="TradingIntelligenceMySQL_Configuration" host="${mysql.host}" port="${mysql.port}" user="${mysql.username}" password="${mysql.password}" database="${mysql.database}" doc:name="MySQL Configuration"/>
-    <file:connector name="File" writeToDirectory="src/main/resources/output" readFromDirectory="src/main/resources/input" autoDelete="true" streaming="true" validateConnections="true" doc:name="File"/>
+    <file:connector name="File" writeToDirectory="${file.path.output}" readFromDirectory="${file.path.input}" autoDelete="true" streaming="true" validateConnections="true" doc:name="File" pollingFrequency="30000"/>
     <context:property-placeholder location="properties/${mule.env}.properties"/>
-    <flow name="stocktransactionsuploaderFlow">
-        <file:inbound-endpoint path="src/main/resources/input" moveToDirectory="src/main/resources/output" responseTimeout="10000" doc:name="Read COL transactions email" connector-ref="File"/>
+
+	<queued-asynchronous-processing-strategy name="threadsControl" maxThreads="5" doc:name="Queued Asynchronous Processing Strategy"/>
+    <flow name="stocktransactionsuploaderFlow" processingStrategy="synchronous">
+        <file:inbound-endpoint path="${file.path.input}" moveToDirectory="${file.path.output}" responseTimeout="10000" doc:name="Read COL transactions email" connector-ref="File"/>
         <enricher target="flowVars.temp" doc:name="Message Enricher">
             <processor-chain doc:name="Processor Chain">
                 <expression-component doc:name="Convert email to DOM"><![CDATA[payload = com.avanaur.tradingintelligence.helper.EmailHelper.getMimeMessage(payload);
